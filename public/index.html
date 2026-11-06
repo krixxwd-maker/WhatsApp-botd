@@ -1,1 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KRIX ESHU | Web Panel</title>
+<style>
+  body { background: #09090b; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 15px; margin: 0; }
+  .header h1 { color: #00ffcc; text-align: center; text-shadow: 0 0 10px rgba(0,255,204,0.5); margin-bottom: 5px; }
+  .status { text-align: center; font-weight: bold; margin-bottom: 20px; font-size: 14px; }
+  .connected { color: #00ffcc; }
+  .disconnected { color: #ff3333; }
+  .card { background: #18181b; padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #27272a; }
+  h3 { color: #00ffcc; margin-top: 0; font-size: 16px; }
+  input, button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: none; box-sizing: border-box; font-size: 14px; }
+  input { background: #000; color: #00ffcc; border: 1px solid #333; }
+  button { background: #00ffcc; color: #000; font-weight: bold; cursor: pointer; }
+  button:active { transform: scale(0.98); }
+  #code { font-size: 1.8rem; color: #00ffcc; font-weight: bold; text-align: center; letter-spacing: 4px; margin: 10px 0; }
+  .log-box { background: #000; padding: 10px; height: 130px; overflow-y: auto; font-family: monospace; font-size: 12px; border-radius: 6px; border: 1px solid #333; }
+  input[type="file"] { background: #000; color: #00ffcc; padding: 8px; border: 1px dashed #00ffcc; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>KRIX ESHU</h1></div>
+  <div id="status" class="status disconnected">Status: Disconnected</div>
 
+  <div class="card">
+    <h3>1. Link WhatsApp</h3>
+    <input type="text" id="phone" placeholder="Number (e.g. 919876543210)">
+    <button onclick="pair()" id="btn-pair">Get Pairing Code</button>
+    <div id="code"></div>
+  </div>
+
+  <div class="card">
+    <h3>2. Play Music</h3>
+    <input type="text" id="target" placeholder="Target JID (e.g. 91...@s.whatsapp.net)">
+    <input type="text" id="song" placeholder="Song Name (e.g. Kesariya)">
+    <button onclick="play()" id="btn-play">🎵 Play Song</button>
+  </div>
+
+  <div class="card">
+    <h3>3. Blast Shayari</h3>
+    <input type="text" id="blastTarget" placeholder="Target JID">
+    <input type="number" id="delay" placeholder="Delay (seconds)" value="20">
+    <button onclick="blast()" id="btn-blast">🚀 Start Blast</button>
+    <button onclick="stop()" style="background:#ff3333; color:#fff; margin-top:5px;">🛑 Stop Blast</button>
+  </div>
+
+  <div class="card">
+    <h3>4. Upload messages.txt</h3>
+    <input type="file" id="msgFile" accept=".txt">
+    <button onclick="uploadFile()" id="btn-upload">📁 Upload Shayari File</button>
+    <div id="upload-status" style="font-size:12px; margin-top:5px; text-align:center;"></div>
+  </div>
+
+  <div class="card">
+    <h3>Live Logs</h3>
+    <div class="log-box" id="logs"></div>
+  </div>
+
+<script>
+  const es = new EventSource('/api/logs');
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const box = document.getElementById('logs');
+    box.innerHTML += `<span style="color:#888">[${data.time}]</span> ${data.msg}<br>`;
+    box.scrollTop = box.scrollHeight;
+  };
+
+  async function pair() {
+    const phone = document.getElementById('phone').value;
+    if(!phone) return alert('Number daalo');
+    const btn = document.getElementById('btn-pair');
+    btn.innerText = "Generating...";
+    btn.disabled = true;
+    await fetch('/api/pair', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone }) });
+    setTimeout(() => { btn.innerText = "Get Pairing Code"; btn.disabled = false; }, 5000);
+    checkStatus();
+  }
+
+  async function checkStatus() {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const st = document.getElementById('status');
+    if(data.connected) {
+      st.innerText = "Status: Connected ✅"; 
+      st.className = "status connected"; 
+      document.getElementById('code').innerText = "";
+    } else {
+      st.innerText = "Status: Disconnected ❌"; 
+      st.className = "status disconnected";
+      if(data.pairingCode) document.getElementById('code').innerText = data.pairingCode;
+    }
+  }
+  setInterval(checkStatus, 3000);
+
+  async function play() {
+    const btn = document.getElementById('btn-play');
+    btn.innerText = "Downloading...";
+    btn.disabled = true;
+    await fetch('/api/play', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target: document.getElementById('target').value, query: document.getElementById('song').value }) });
+    setTimeout(() => { btn.innerText = "🎵 Play Song"; btn.disabled = false; }, 8000);
+  }
+
+  async function blast() {
+    await fetch('/api/blast', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target: document.getElementById('blastTarget').value, delaySec: document.getElementById('delay').value }) });
+  }
+  
+  async function stop() { await fetch('/api/stop', { method: 'POST' }); }
+
+  async function uploadFile() {
+    const fileInput = document.getElementById('msgFile');
+    if (fileInput.files.length === 0) return alert('Pehle .txt file select karo!');
+    const formData = new FormData();
+    formData.append('msgFile', fileInput.files[0]);
+    const btn = document.getElementById('btn-upload');
+    const statusDiv = document.getElementById('upload-status');
+    btn.innerText = "Uploading...";
+    btn.disabled = true;
+    statusDiv.innerText = "";
+    statusDiv.style.color = "#00ffcc";
+    try {
+      const res = await fetch('/api/upload-msg', { method: 'POST', body: formData });
+      const data = await res.json();
+      if(data.error) throw new Error(data.error);
+      statusDiv.innerText = `✅ File Uploaded! (Total Lines: ${data.count})`;
+      statusDiv.style.color = "#00ffcc";
+    } catch (err) {
+      statusDiv.innerText = `❌ Error: ${err.message}`;
+      statusDiv.style.color = "#ff3333";
+    } finally {
+      btn.innerText = "📁 Upload Shayari File";
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+  </html>
